@@ -1,0 +1,225 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth models (required by @auth/prisma-adapter)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core application models
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  university    String?
+  yearOfStudy   Int?
+  fieldOfStudy  String?
+  language      String    @default("en")
+  theme         String    @default("light")
+  role          String    @default("student")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts         Account[]
+  sessions         Session[]
+  enrollments      Enrollment[]
+  examSessions     ExamSession[]
+  flashcardDecks   FlashcardDeck[]
+  chatMessages     ChatMessage[]
+  studySessions    StudySession[]
+  achievements     Achievement[]
+  flashcardProgress FlashcardProgress[]
+  uploadedMaterials CourseMaterial[] @relation("MaterialUploader")
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  department  String
+  university  String
+  year        Int
+  chapters    Json
+  thumbnail   String?
+  createdAt   DateTime @default(now())
+
+  enrollments  Enrollment[]
+  examSessions ExamSession[]
+  questions    Question[]
+  materials    CourseMaterial[]
+}
+
+model CourseMaterial {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  fileName     String
+  storageKey   String   @unique
+  fileSize     Int
+  extractedText String  @default("") @db.Text
+  published    Boolean  @default(false)
+  courseId     String
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  course     Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploadedBy User   @relation("MaterialUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+  questions  Question[]
+
+  @@index([courseId, published])
+}
+
+model Enrollment {
+  id         String   @id @default(cuid())
+  userId     String
+  courseId   String
+  enrolledAt DateTime @default(now())
+  progress   Float    @default(0)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+
+model ExamSession {
+  id             String   @id @default(cuid())
+  userId         String
+  courseId       String?
+  subject        String
+  score          Float    @default(0)
+  totalQuestions Int
+  answers        Json
+  status         String   @default("completed")
+  completedAt    DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
+}
+
+model Question {
+  id            String  @id @default(cuid())
+  subject       String
+  courseId      String?
+  materialId    String?
+  text          String
+  options       Json
+  correctAnswer String
+  explanation   String
+  difficulty    String  @default("medium")
+
+  course Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  material CourseMaterial? @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@index([materialId])
+}
+
+model FlashcardDeck {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  subject   String
+  cards     Json
+  createdAt DateTime @default(now())
+
+  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progress FlashcardProgress[]
+}
+
+model FlashcardProgress {
+  id         String   @id @default(cuid())
+  userId     String
+  deckId     String
+  cardIndex  Int
+  ease       Float    @default(2.5)
+  interval   Int      @default(1)
+  nextReview DateTime @default(now())
+
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deck FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deckId, cardIndex])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  role      String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StudySession {
+  id              String   @id @default(cuid())
+  userId          String
+  subject         String
+  durationMinutes Int
+  date            DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Achievement {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String
+  unlockedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
